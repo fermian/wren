@@ -713,18 +713,11 @@ static int readHexDigit(Parser* parser)
 }
 
 // Parses the numeric value of the current token.
-static void makeNumber(Parser* parser, bool isHex)
+static void makeNumber(Parser* parser)
 {
   errno = 0;
 
-  if (isHex)
-  {
-    parser->next.value = NUM_VAL((double)strtoll(parser->tokenStart, NULL, 16));
-  }
-  else
-  {
-    parser->next.value = NUM_VAL(strtod(parser->tokenStart, NULL));
-  }
+  parser->next.value = NUM_VAL(strtod(parser->tokenStart, NULL));
   
   if (errno == ERANGE)
   {
@@ -732,8 +725,8 @@ static void makeNumber(Parser* parser, bool isHex)
     parser->next.value = NUM_VAL(0);
   }
   
-  // We don't check that the entire token is consumed after calling strtoll()
-  // or strtod() because we've already scanned it ourselves and know it's valid.
+  // We don't check that the entire token is consumed after calling strtod()
+  // because we've already scanned it ourselves and know it's valid.
 
   makeToken(parser, TOKEN_NUMBER);
 }
@@ -744,10 +737,27 @@ static void readHexNumber(Parser* parser)
   // Skip past the `x` used to denote a hexadecimal literal.
   nextChar(parser);
 
-  // Iterate over all the valid hexadecimal digits found.
-  while (readHexDigit(parser) != -1) continue;
+  uint64_t value = 0;
+  int digit = -1;
+  int numOfDigits = 0;
+  const int maxHexDigits = 16;
 
-  makeNumber(parser, true);
+  // Iterate over all the valid hexadecimal digits found.
+  while ((digit = readHexDigit(parser)) != -1) {
+    if (numOfDigits == maxHexDigits)
+    {
+      lexError(parser, "Number literal was too large (%d).",
+        sizeof(unsigned long long));
+      parser->next.value = NUM_VAL(0);
+      makeToken(parser, TOKEN_NUMBER);
+      return;
+    }
+    value = value * 16 + digit;
+    numOfDigits++;
+  }
+
+  parser->next.value = NUM_VAL((double)value);
+  makeToken(parser, TOKEN_NUMBER);
 }
 
 // Finishes lexing a number literal.
@@ -780,7 +790,7 @@ static void readNumber(Parser* parser)
     while (isDigit(peekChar(parser))) nextChar(parser);
   }
 
-  makeNumber(parser, false);
+  makeNumber(parser);
 }
 
 // Finishes lexing an identifier. Handles reserved words.
